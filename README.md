@@ -88,7 +88,20 @@ No accounts, no subscriptions, no port forwarding, and your footage never leaves
 
 Grab the latest `.ipk` from the [Releases](../../releases) page.
 
-**Option B — build it yourself**
+**Option B — Homebrew Channel (one-click installs and updates)**
+
+If you have [Homebrew Channel](https://github.com/webosbrew/webos-homebrew-channel) on your TV, add this repository to it once:
+
+1. Open Homebrew Channel → **Settings** → **Add repository**.
+2. Enter:
+   ```
+   https://github.com/mahmoudelwekel/horus-eye/releases/latest/download/apps.json
+   ```
+3. Horus Eye now appears in the app list. Install it from there; new releases show up as updates you can install with one click.
+
+Homebrew Channel works without root, through Developer Mode, so the Developer Mode expiry below still applies unless your TV is rooted.
+
+**Option C — build it yourself**
 
 ```bash
 npm install -g @webos-tools/cli
