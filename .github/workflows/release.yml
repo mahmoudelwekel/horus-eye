@@ -1,0 +1,58 @@
+name: Release
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install webOS CLI
+        run: npm install -g @webos-tools/cli
+
+      - name: Read app version
+        id: meta
+        run: |
+          VERSION=$(jq -r .version webos-camera-app/appinfo.json)
+          APP_ID=$(jq -r .id webos-camera-app/appinfo.json)
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+          echo "ipk=${APP_ID}_${VERSION}_all.ipk" >> "$GITHUB_OUTPUT"
+
+      - name: Build IPK
+        run: |
+          mkdir -p out
+          ares-package webos-camera-app -o out
+          ls -l out
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.meta.outputs.tag }}
+          IPK: out/${{ steps.meta.outputs.ipk }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            # Same version already released: refresh the asset so the release matches master.
+            gh release upload "$TAG" "$IPK" --clobber
+            echo "Updated asset on existing release $TAG (bump version in appinfo.json for a new release)."
+          else
+            gh release create "$TAG" "$IPK" \
+              --title "Horus Eye $TAG" \
+              --target "$GITHUB_SHA" \
+              --generate-notes
+          fi

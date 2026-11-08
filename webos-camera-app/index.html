@@ -1,0 +1,1396 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Horus Eye</title>
+<link rel="icon" type="image/svg+xml" href="logo.svg">
+<link rel="icon" type="image/png" sizes="130x130" href="largeIcon.png">
+<link rel="apple-touch-icon" href="largeIcon.png">
+<script src="hls.min.js"></script>
+<style>
+  :root {
+    --bg: #0a0d12;
+    --panel: #12161d;
+    --panel-2: #171c25;
+    --border: #232a36;
+    --accent: #4da3ff;
+    --accent-glow: rgba(77,163,255,.45);
+    --live: #34d399;
+    --err: #f87171;
+    --warn: #fbbf24;
+    --text: #eef2f7;
+    --text-dim: #8b96a5;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    background: radial-gradient(1200px 800px at 20% -10%, #141b26 0%, var(--bg) 55%);
+    color: var(--text);
+    font-family: "LG Display-Regular", "Segoe UI", Arial, sans-serif;
+    overflow: hidden;
+  }
+  #app { width: 100vw; height: 100vh; display: flex; flex-direction: column; }
+
+  /* ---------- Top bar ---------- */
+  #topbar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 18px 28px 10px 28px;
+    flex: 0 0 auto;
+  }
+  #brand { display: flex; align-items: center; }
+  #brand .logo {
+    width: 34px; height: 34px; border-radius: 8px;
+    background: url("logo.svg") center / cover no-repeat;
+    box-shadow: 0 0 16px rgba(242,184,67,.35);
+  }
+  #brand .logo { margin-right: 12px; }
+  #brand .title { font-size: 22px; font-weight: 700; letter-spacing: .2px; }
+  #brand .count { color: var(--text-dim); font-size: 15px; margin-left: 18px; }
+  #right { display: flex; align-items: center; }
+  #clock { color: var(--text-dim); font-size: 16px; font-variant-numeric: tabular-nums; }
+  #settingsBtn {
+    width: 36px; height: 36px; border-radius: 50%;
+    background: var(--panel-2); border: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; color: var(--text-dim);
+    transition: background .15s ease, color .15s ease, box-shadow .15s ease;
+  }
+  #settingsBtn svg { width: 18px; height: 18px; fill: currentColor; }
+  #settingsBtn:hover, #settingsBtn.focused {
+    color: var(--text); background: var(--panel); box-shadow: 0 0 0 2px var(--accent-glow);
+  }
+
+  /* ---------- Grid ---------- */
+  #grid {
+    flex: 1 1 auto;
+    width: 100%; overflow: hidden;
+    display: grid;
+    gap: 18px;
+    padding: 10px 28px 64px 28px;
+    min-height: 0;
+  }
+  #grid.fullscreen {
+    padding: 0;
+  }
+  .cell {
+    position: relative;
+    min-width: 0; min-height: 0;
+    background: #000;
+    border-radius: 18px;
+    overflow: hidden;
+    box-shadow: 0 2px 10px rgba(0,0,0,.35);
+    transition: box-shadow .2s ease, transform .2s ease;
+  }
+  .cell::after {
+    content: "";
+    position: absolute; top: 0; right: 0; bottom: 0; left: 0;
+    border-radius: inherit;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,.06);
+    pointer-events: none;
+  }
+  .cell.focused {
+    box-shadow:
+      0 0 0 3px var(--accent),
+      0 0 24px 2px var(--accent-glow),
+      0 16px 40px rgba(0,0,0,.55);
+    z-index: 2;
+  }
+  .cell video {
+    width: 100%; height: 100%; object-fit: contain; background: #000;
+    display: block;
+    border-radius: 18px;
+    clip-path: inset(0 round 18px);
+    -webkit-clip-path: inset(0 round 18px);
+  }
+  /* Snapshot shown over the video for every tile that isn't playing live
+     (the TV can decode only one video at a time), and while a live tile connects. */
+  .cell .snap {
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    object-fit: contain; background: #000; border-radius: 18px;
+    pointer-events: none;
+  }
+  .cell.videoOn .snap { display: none; }
+  #grid.fullscreen .cell.active .snap { border-radius: 0; }
+  .dot.snap { background: var(--accent); box-shadow: 0 0 6px var(--accent-glow); }
+  #grid.fullscreen .cell.active video {
+    border-radius: 0;
+    clip-path: none;
+    -webkit-clip-path: none;
+  }
+  .cell .overlay-top {
+    position: absolute; left: 0; right: 0; top: 0;
+    padding: 12px 14px;
+    display: flex; align-items: center; justify-content: space-between;
+    background: linear-gradient(180deg, rgba(0,0,0,.65), transparent);
+    pointer-events: none;
+  }
+  .cell .controls {
+    position: absolute; right: 10px; bottom: 10px;
+    display: flex;
+    opacity: 0; transition: opacity .15s ease;
+  }
+  .cell.active .controls { opacity: 1; }
+  .ctrlBtn {
+    width: 34px; height: 34px; border-radius: 50%;
+    background: rgba(10,13,18,.7); border: 1px solid rgba(255,255,255,.14);
+    display: flex; align-items: center; justify-content: center;
+    color: var(--text); cursor: pointer;
+    backdrop-filter: blur(4px);
+  }
+  .ctrlBtn svg { width: 16px; height: 16px; fill: currentColor; }
+  .ctrlBtn.active { background: var(--accent); color: #06121f; border-color: var(--accent); }
+  .ctrlBtn.kbdFocus { box-shadow: 0 0 0 3px var(--accent-glow); }
+  .cell .name {
+    font-size: 17px; font-weight: 600;
+    display: flex; align-items: center;
+    text-shadow: 0 1px 4px rgba(0,0,0,.8);
+  }
+  .dot {
+    width: 9px; height: 9px; border-radius: 50%;
+    background: var(--text-dim);
+    flex: 0 0 auto;
+  }
+  .dot.live { background: var(--live); box-shadow: 0 0 8px var(--live); }
+  .dot.err { background: var(--err); box-shadow: 0 0 8px var(--err); }
+  .dot.connecting { background: var(--warn); box-shadow: 0 0 8px var(--warn); animation: pulse 1.2s infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
+
+  .cell .status {
+    position: absolute; left: 14px; bottom: 12px;
+    font-size: 14px; color: var(--text-dim);
+    text-shadow: 0 1px 4px rgba(0,0,0,.8);
+    display: flex; align-items: center;
+  }
+  .spinner {
+    width: 13px; height: 13px; border-radius: 50%;
+    border: 2px solid rgba(255,255,255,.25); border-top-color: var(--text-dim);
+    animation: spin .8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  #grid.fullscreen .cell { display: none; }
+  #grid.fullscreen .cell.active {
+    display: block; grid-column: 1 / -1; grid-row: 1 / -1;
+    border-radius: 0; border: none; box-shadow: none; transform: none;
+  }
+
+  /* ---------- Empty / error states ---------- */
+  #emptyState {
+    flex: 1; display: none; flex-direction: column; align-items: center; justify-content: center;
+    color: var(--text-dim); text-align: center; padding: 0 40px 50px 40px;
+  }
+  #emptyState.show { display: flex; }
+  #emptyState .big { font-size: 24px; color: var(--text); font-weight: 600; }
+  #emptyState .hint { font-size: 16px; max-width: 640px; line-height: 1.5; }
+  #emptyState code {
+    background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px;
+    padding: 2px 8px; color: var(--accent);
+  }
+
+  /* ---------- Shortcut footer ---------- */
+  #footer {
+    position: fixed; left: 28px; right: 28px; bottom: 16px;
+    display: flex; align-items: center; justify-content: space-between;
+    opacity: .92; transition: opacity .5s ease;
+    pointer-events: none;
+  }
+  #footer.idle { opacity: .2; }
+  #shortcuts { display: flex; flex-wrap: wrap; }
+  .chip {
+    display: flex; align-items: center;
+    background: rgba(18,22,29,.72); backdrop-filter: blur(6px);
+    border: 1px solid var(--border); border-radius: 999px;
+    padding: 6px 14px 6px 8px; font-size: 13px; color: var(--text-dim);
+    white-space: nowrap;
+  }
+  .chip .key {
+    background: var(--panel-2); border: 1px solid var(--border); border-radius: 7px;
+    padding: 3px 8px; font-size: 12px; color: var(--text); font-weight: 700;
+    letter-spacing: .3px;
+  }
+  #credit {
+    font-size: 12px; color: var(--text-dim); opacity: .65;
+    letter-spacing: .2px; white-space: nowrap;
+  }
+
+  /* ---------- Settings overlay ---------- */
+  #settings {
+    position: fixed; top: 0; right: 0; bottom: 0; left: 0; background: rgba(5,7,10,.78);
+    display: none; align-items: center; justify-content: center; z-index: 50;
+  }
+  #settings.show { display: flex; }
+  #settingsBox {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 16px;
+    padding: 32px 36px; width: 520px; box-shadow: 0 20px 60px rgba(0,0,0,.6);
+  }
+  #settingsBox h2 { margin: 0 0 6px 0; font-size: 22px; }
+  #settingsBox h3 { margin: 22px 0 10px 0; font-size: 16px; color: var(--text-dim); font-weight: 600; }
+  #settingsBox p { color: var(--text-dim); font-size: 15px; margin: 0 0 18px 0; }
+  #settingsBox label { font-size: 14px; color: var(--text-dim); display: block; margin-bottom: 6px; }
+  #settingsBox input {
+    width: 100%; padding: 12px 14px; font-size: 17px;
+    background: var(--panel-2); border: 2px solid var(--border); border-radius: 10px;
+    color: var(--text); outline: none;
+  }
+  #settingsBox input:focus { border-color: var(--accent); }
+  #cameraList {
+    display: flex; flex-direction: column;
+    max-height: 260px; overflow-y: auto;
+  }
+  .camRow {
+    display: flex; align-items: center;
+    padding: 10px 12px; border-radius: 10px;
+    border: 2px solid transparent; background: var(--panel-2);
+  }
+  .camRow.focused { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+  .camRow .box {
+    width: 20px; height: 20px; border-radius: 6px; flex: 0 0 auto;
+    border: 2px solid var(--border); background: var(--panel);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .camRow.checked .box { background: var(--accent); border-color: var(--accent); }
+  .camRow .box svg { width: 13px; height: 13px; fill: #06121f; display: none; }
+  .camRow.checked .box svg { display: block; }
+  .camRow .label { font-size: 16px; }
+  #settingsBox .row { display: flex; margin-top: 22px; }
+  #settingsBox button {
+    flex: 1; padding: 12px; font-size: 16px; font-weight: 600;
+    border-radius: 10px; border: 2px solid var(--border); background: var(--panel-2);
+    color: var(--text); cursor: pointer;
+  }
+  #settingsBox button.primary { background: var(--accent); border-color: var(--accent); color: #06121f; }
+  #settingsBox button.focused { outline: none; box-shadow: 0 0 0 3px var(--accent-glow); }
+
+  /* Spacing via margins instead of flex `gap` (unsupported on webOS 5 / Chromium 68) */
+  #right > * + * { margin-left: 18px; }
+  .cell .controls > * + * { margin-left: 8px; }
+  .cell .name > * + * { margin-left: 9px; }
+  .cell .status > * + * { margin-left: 8px; }
+  #emptyState > * + * { margin-top: 14px; }
+  #footer > * + * { margin-left: 16px; }
+  #shortcuts > * { margin-right: 10px; }
+  #shortcuts > *:last-child { margin-right: 0; }
+  .chip > * + * { margin-left: 8px; }
+  #cameraList > * + * { margin-top: 8px; }
+  .camRow > * + * { margin-left: 12px; }
+  #settingsBox .row > * + * { margin-left: 12px; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="topbar">
+    <div id="brand">
+      <div class="logo"></div>
+      <div class="title">Horus Eye</div>
+      <div class="count" id="count"></div>
+    </div>
+    <div id="right">
+      <div id="clock"></div>
+      <div id="settingsBtn" tabindex="-1" title="Settings">
+        <svg viewBox="0 0 24 24"><path d="M19.14 12.94a7.07 7.07 0 0 0 .06-.94 7.07 7.07 0 0 0-.06-.94l2.03-1.58a.5.5 0 0 0 .12-.65l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7.3 7.3 0 0 0-1.62-.94l-.36-2.54a.5.5 0 0 0-.5-.43h-3.84a.5.5 0 0 0-.5.43l-.36 2.54c-.59.24-1.13.56-1.62.94l-2.39-.96a.5.5 0 0 0-.6.22L2.67 8.83a.5.5 0 0 0 .12.65l2.03 1.58c-.04.3-.06.62-.06.94s.02.64.06.94l-2.03 1.58a.5.5 0 0 0-.12.65l1.92 3.32c.14.24.42.32.66.22l2.39-.96c.49.38 1.03.7 1.62.94l.36 2.54c.05.25.26.43.5.43h3.84c.25 0 .45-.18.5-.43l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.24.1.52.02.66-.22l1.92-3.32a.5.5 0 0 0-.12-.65zM12 15.5A3.5 3.5 0 1 1 12 8.5a3.5 3.5 0 0 1 0 7z"/></svg>
+      </div>
+    </div>
+  </div>
+
+  <div id="grid"></div>
+
+  <div id="emptyState">
+    <div class="big" id="emptyTitle">Connecting to bridge…</div>
+    <div class="hint" id="emptyHint"></div>
+  </div>
+</div>
+
+<div id="footer">
+  <div id="shortcuts">
+    <div class="chip"><span class="key">&#8597;&#8596;</span>Navigate</div>
+    <div class="chip"><span class="key">OK</span>Fullscreen</div>
+    <div class="chip"><span class="key">&#8593;</span>Settings</div>
+    <div class="chip"><span class="key">&#8592;&#8594; OK</span>Mute / Pause / Close</div>
+  </div>
+  <div id="credit">Developed by Mahmoud Elwekel</div>
+</div>
+
+<div id="settings">
+  <div id="settingsBox">
+    <h2>Bridge address</h2>
+    <p>IP (and optionally port) of the device running go2rtc on your network.</p>
+    <label for="hostInput">Host</label>
+    <input id="hostInput" type="text" placeholder="192.168.1.4" />
+    <h3>Cameras to display</h3>
+    <div id="cameraList"></div>
+    <div class="row">
+      <button id="btnCancel">Cancel</button>
+      <button id="btnSave" class="primary">Save &amp; Reload</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============================================================
+// Configuration
+// ============================================================
+const DEFAULT_HOST = "192.168.1.60";
+const API_PORT = 1984;
+const REFRESH_INTERVAL_MS = 15000; // re-poll camera list periodically
+
+function getHost() {
+  try { return localStorage.getItem("bridgeHost") || DEFAULT_HOST; }
+  catch (e) { return DEFAULT_HOST; }
+}
+function setHost(h) {
+  try { localStorage.setItem("bridgeHost", h); } catch (e) {}
+}
+
+let BRIDGE_HOST = getHost();
+function apiBase() { return `http://${BRIDGE_HOST}:${API_PORT}`; }
+function wsBase() { return `ws://${BRIDGE_HOST}:${API_PORT}`; }
+function hlsUrl(srcName) { return `${apiBase()}/api/stream.m3u8?src=${encodeURIComponent(srcName)}`; }
+function wsUrl(srcName) { return `${wsBase()}/api/ws?src=${encodeURIComponent(srcName)}`; }
+
+const FS_SUFFIX = "_fs";
+function isFsVariant(n) { return n.endsWith(FS_SUFFIX); }
+// Which quality name to actually connect to for a given base camera + view mode.
+function sourceNameFor(baseName, wantFullscreenQuality) {
+  if (wantFullscreenQuality && fsAvailable.has(baseName)) return baseName + FS_SUFFIX;
+  return baseName;
+}
+
+// `null` means "no selection made yet -> show all cameras".
+function loadEnabledCameras() {
+  try {
+    const raw = localStorage.getItem("enabledCameras");
+    return raw === null ? null : new Set(JSON.parse(raw));
+  } catch (e) { return null; }
+}
+function saveEnabledCameras(set) {
+  try { localStorage.setItem("enabledCameras", JSON.stringify(Array.from(set))); } catch (e) {}
+}
+let enabledCameras = loadEnabledCameras();
+
+// ============================================================
+// State
+// ============================================================
+const grid = document.getElementById("grid");
+const emptyState = document.getElementById("emptyState");
+const emptyTitle = document.getElementById("emptyTitle");
+const emptyHint = document.getElementById("emptyHint");
+const countEl = document.getElementById("count");
+const clockEl = document.getElementById("clock");
+
+let allCameraNames = [];  // base camera names (excludes "_fs" quality variants)
+let fsAvailable = new Set(); // base names that have a matching "<name>_fs" stream
+let cameraNames = [];     // filtered (enabled) list actually displayed, sorted
+let cells = new Map();    // name -> { cell, video, hls, dot, status }
+let focusedIndex = 0;
+let isFullscreen = false;
+let refreshTimer = null;
+
+// ============================================================
+// Clock
+// ============================================================
+function tickClock() {
+  const d = new Date();
+  const date = d.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
+  const time = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  clockEl.textContent = `${date} · ${time}`;
+}
+tickClock();
+setInterval(tickClock, 15000);
+
+// ============================================================
+// Grid layout
+// ============================================================
+function colsFor(n) {
+  if (n <= 1) return 1;
+  if (n <= 4) return 2;
+  if (n <= 9) return 3;
+  return 4;
+}
+// Chrome 68 (webOS 5) doesn't treat the flex-sized grid as having a definite
+// height, so 1fr rows collapse to content size. Give it an explicit height.
+function sizeGrid() {
+  const topbar = document.getElementById("topbar");
+  const top = topbar.style.display === "none" ? 0 : topbar.offsetHeight;
+  grid.style.height = Math.max(0, window.innerHeight - top) + "px";
+}
+window.addEventListener("resize", sizeGrid);
+function layoutGrid(n) {
+  sizeGrid();
+  const cols = colsFor(n);
+  const rows = Math.max(1, Math.ceil(n / cols));
+  grid.style.gridTemplateColumns = `repeat(${cols}, minmax(0, 1fr))`;
+  grid.style.gridTemplateRows = `repeat(${rows}, minmax(0, 1fr))`;
+}
+
+// ============================================================
+// Camera discovery (polls go2rtc's REST API)
+// ============================================================
+async function fetchCameraList() {
+  const res = await fetch(`${apiBase()}/api/streams`, { cache: "no-store" });
+  if (!res.ok) throw new Error("HTTP " + res.status);
+  const data = await res.json();
+  return Object.keys(data).sort();
+}
+
+async function refreshCameras(isFirstLoad) {
+  let fetched;
+  try {
+    fetched = await fetchCameraList();
+  } catch (e) {
+    if (isFirstLoad || cameraNames.length === 0) {
+      showEmpty(
+        "Can't reach the bridge",
+        `No response from <code>${apiBase()}</code>. Check that go2rtc is running and this TV can reach that address, or press Back to change the bridge host.`
+      );
+    }
+    return;
+  }
+
+  allCameraNames = fetched.filter(n => !isFsVariant(n)).sort();
+  fsAvailable = new Set(fetched.filter(isFsVariant).map(n => n.slice(0, -FS_SUFFIX.length)));
+
+  if (allCameraNames.length === 0) {
+    showEmpty(
+      "No cameras configured",
+      `Connected to the bridge, but no streams are set up yet. Add one from go2rtc's web UI at <code>${apiBase()}</code>.`
+    );
+    teardownAll();
+    cameraNames = [];
+    return;
+  }
+
+  const names = enabledCameras === null ? allCameraNames : allCameraNames.filter(n => enabledCameras.has(n));
+
+  if (names.length === 0) {
+    showEmpty(
+      "No cameras selected",
+      `You have ${allCameraNames.length} camera${allCameraNames.length === 1 ? "" : "s"} available, but none are selected to display. Open Settings (Up, then OK) and choose which ones to show.`
+    );
+    teardownAll();
+    cameraNames = [];
+    return;
+  }
+
+  hideEmpty();
+
+  const added = names.filter(n => !cameraNames.includes(n));
+  const removed = cameraNames.filter(n => !names.includes(n));
+
+  removed.forEach(removeCamera);
+  added.forEach(n => {
+    try { addCamera(n); }
+    catch (e) { console.error("addCamera failed for " + n, e); }
+  });
+  const toStart = added.filter(n => cells.has(n));
+
+  if (added.length || removed.length) {
+    cameraNames = names;
+    layoutGrid(cameraNames.length);
+    reorderDom();
+    // New tiles start with a snapshot; setFocus() below picks the live one,
+    // once every tile is in its final place (see reorderDom).
+    toStart.forEach(requestSnapshot);
+    countEl.textContent = cameraNames.length + (cameraNames.length === 1 ? " camera" : " cameras");
+    if (focusedIndex >= cameraNames.length) focusedIndex = cameraNames.length - 1;
+    setFocus(Math.max(0, focusedIndex));
+  }
+}
+
+function showEmpty(title, hintHtml) {
+  emptyTitle.textContent = title;
+  emptyHint.innerHTML = hintHtml;
+  emptyState.classList.add("show");
+  grid.style.display = "none";
+}
+function hideEmpty() {
+  emptyState.classList.remove("show");
+  grid.style.display = "grid";
+}
+
+// Only moves tiles that are out of place: moving a <video> while its stream
+// is attaching cancels the attachment on webOS (the MediaSource never opens).
+function reorderDom() {
+  let i = 0;
+  cameraNames.forEach(name => {
+    const entry = cells.get(name);
+    if (!entry) return;
+    if (grid.children[i] !== entry.cell) grid.insertBefore(entry.cell, grid.children[i] || null);
+    i++;
+  });
+}
+
+// ============================================================
+// Per-camera cell lifecycle
+// ============================================================
+function addCamera(name) {
+  if (cells.has(name)) return;
+  const cell = document.createElement("div");
+  cell.className = "cell";
+  cell.dataset.name = name;
+
+  const video = document.createElement("video");
+  video.autoplay = true;
+  video.muted = true;
+  video.playsInline = true;
+
+  const overlayTop = document.createElement("div");
+  overlayTop.className = "overlay-top";
+  const nameEl = document.createElement("div");
+  nameEl.className = "name";
+  const dot = document.createElement("span");
+  dot.className = "dot connecting";
+  nameEl.appendChild(dot);
+  nameEl.appendChild(document.createTextNode(prettyName(name)));
+  overlayTop.appendChild(nameEl);
+
+  const status = document.createElement("div");
+  status.className = "status";
+  const spinner = document.createElement("span");
+  spinner.className = "spinner";
+  const statusText = document.createElement("span");
+  statusText.textContent = "Connecting…";
+  status.appendChild(spinner);
+  status.appendChild(statusText);
+
+  const controls = document.createElement("div");
+  controls.className = "controls";
+
+  const muteBtn = document.createElement("div");
+  muteBtn.className = "ctrlBtn";
+  const ICON_MUTED = '<svg viewBox="0 0 24 24"><path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.42.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06a8.99 8.99 0 0 0 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/></svg>';
+  const ICON_SOUND = '<svg viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>';
+  muteBtn.innerHTML = ICON_MUTED;
+
+  const pauseBtn = document.createElement("div");
+  pauseBtn.className = "ctrlBtn";
+  const ICON_PLAY = '<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>';
+  const ICON_PAUSE = '<svg viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>';
+  pauseBtn.innerHTML = ICON_PAUSE;
+
+  const closeBtn = document.createElement("div");
+  closeBtn.className = "ctrlBtn";
+  closeBtn.title = "Exit fullscreen";
+  closeBtn.innerHTML = '<svg viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>';
+
+  controls.appendChild(muteBtn);
+  controls.appendChild(pauseBtn);
+  controls.appendChild(closeBtn);
+
+  const snap = document.createElement("img");
+  snap.className = "snap";
+  snap.alt = "";
+
+  cell.appendChild(video);
+  cell.appendChild(snap);
+  cell.appendChild(overlayTop);
+  cell.appendChild(status);
+  cell.appendChild(controls);
+  grid.appendChild(cell);
+
+  const entry = {
+    cell, video, snap, dot, status, statusText, spinner, muteBtn, pauseBtn, closeBtn,
+    hasSnap: false, snapPending: false, snapAt: 0, snapFails: 0,
+    ICON_PLAY, ICON_PAUSE, ICON_MUTED, ICON_SOUND,
+    hls: null, pc: null, ws: null, rtcTimeout: null,
+    quality: "grid", sourceName: name,
+  };
+  cells.set(name, entry);
+
+  muteBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    video.muted = !video.muted;
+    muteBtn.innerHTML = video.muted ? ICON_MUTED : ICON_SOUND;
+    muteBtn.classList.toggle("active", !video.muted);
+  });
+  closeBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (isFullscreen) toggleFullscreen(false);
+  });
+  pauseBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (video.paused) { video.play().catch(() => {}); pauseBtn.innerHTML = ICON_PAUSE; }
+    else { video.pause(); pauseBtn.innerHTML = ICON_PLAY; }
+    pauseBtn.classList.toggle("active", video.paused);
+  });
+
+}
+
+function teardownPlayback(entry) {
+  entry.gen = (entry.gen || 0) + 1; // invalidates callbacks from the previous session
+  if (entry.mseWatch) { clearInterval(entry.mseWatch); entry.mseWatch = null; }
+  if (entry.mseTimeout) { clearTimeout(entry.mseTimeout); entry.mseTimeout = null; }
+  if (entry.ms) {
+    try { if (entry.ms.readyState === "open") entry.ms.endOfStream(); } catch (e) {}
+    entry.ms = null;
+    entry.video.removeAttribute("src");
+    try { entry.video.load(); } catch (e) {}
+  }
+  if (entry.hls) { try { entry.hls.destroy(); } catch (e) {} entry.hls = null; }
+  if (entry.rtcTimeout) { clearTimeout(entry.rtcTimeout); entry.rtcTimeout = null; }
+  if (entry.pc) { try { entry.pc.close(); } catch (e) {} entry.pc = null; }
+  if (entry.ws) { try { entry.ws.close(); } catch (e) {} entry.ws = null; }
+  entry.video.srcObject = null;
+}
+
+function removeCamera(name) {
+  const entry = cells.get(name);
+  if (!entry) return;
+  if (name === liveName) liveName = null;
+  teardownPlayback(entry);
+  entry.cell.remove();
+  cells.delete(name);
+}
+
+function teardownAll() {
+  cells.forEach((entry) => { teardownPlayback(entry); entry.cell.remove(); });
+  cells.clear();
+  liveName = null;
+  clearTimeout(liveTimer);
+}
+
+function prettyName(name) {
+  return name.replace(/[_-]+/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+}
+
+function markLive(entry) {
+  entry.cell.classList.add("videoOn");
+  entry.dot.className = "dot live";
+  entry.status.style.display = "none";
+  entry.pauseBtn.innerHTML = entry.ICON_PAUSE;
+  entry.pauseBtn.classList.remove("active");
+  entry.muteBtn.innerHTML = entry.video.muted ? entry.ICON_MUTED : entry.ICON_SOUND;
+  entry.muteBtn.classList.toggle("active", !entry.video.muted);
+}
+function markConnecting(entry, msg) {
+  entry.cell.classList.remove("videoOn"); // keep showing the snapshot meanwhile
+  entry.dot.className = "dot connecting";
+  entry.status.style.display = "flex";
+  entry.spinner.style.display = "";
+  entry.statusText.textContent = msg || "Connecting…";
+}
+function markError(entry, msg) {
+  entry.cell.classList.remove("videoOn");
+  entry.dot.className = "dot err";
+  entry.status.style.display = "flex";
+  entry.spinner.style.display = "none";
+  entry.statusText.textContent = msg || "Unavailable";
+}
+
+// Starts (or switches) playback for a camera. `wantFs` picks the main-stream
+// "_fs" quality variant when available (used for fullscreen); otherwise the
+// lighter grid/substream quality is used. Tries WebRTC first for near-instant,
+// low-latency start, falling back to HLS if WebRTC can't connect.
+function startPlayback(baseName, entry, wantFs) {
+  // Only the live tile may play (single hardware decoder on webOS TVs); this
+  // also ignores late reconnect timers for tiles that went back to snapshots.
+  if (baseName !== liveName) return;
+  if (entry.restartTimer) { clearTimeout(entry.restartTimer); entry.restartTimer = null; }
+  teardownPlayback(entry);
+  entry.quality = wantFs ? "fullscreen" : "grid";
+  const sourceName = sourceNameFor(baseName, wantFs);
+  entry.sourceName = sourceName;
+  markConnecting(entry);
+  startWebRTC(baseName, entry, sourceName, () => {
+    if (!cells.has(baseName) || entry.sourceName !== sourceName) return;
+    startMse(baseName, entry, sourceName, () => {
+      if (!cells.has(baseName) || entry.sourceName !== sourceName) return;
+      startHls(baseName, entry, sourceName);
+    });
+  });
+}
+
+// go2rtc "MSE over WebSocket": the bridge pushes fragmented MP4 continuously
+// and we feed it to Media Source Extensions. Much steadier than go2rtc's HLS
+// on older TVs (webOS 5 / Chrome 68), and low latency.
+const MSE_CODECS = ["avc1.640029", "avc1.64002A", "avc1.640033", "avc1.4D401F", "avc1.42E01E",
+                    "hvc1.1.6.L153.B0", "mp4a.40.2", "mp4a.40.5"];
+function startMse(baseName, entry, sourceName, onFail) {
+  if (!window.MediaSource || !window.WebSocket) { onFail(); return; }
+  const codecs = MSE_CODECS.filter(c => MediaSource.isTypeSupported('video/mp4; codecs="' + c + '"'));
+  if (!codecs.length) { onFail(); return; }
+
+  const gen = entry.gen;
+  const video = entry.video;
+  const ms = new MediaSource();
+  entry.ms = ms;
+  video.srcObject = null;
+  video.src = URL.createObjectURL(ms);
+
+  let ws = null, sb = null, queue = [], live = false, done = false, kicked = false;
+  let gotReply = false; // go2rtc answered our MSE request, so MSE works with this bridge
+  const current = () => entry.gen === gen && cells.has(baseName);
+
+  // Falls back to HLS only when MSE itself doesn't work here (no answer from
+  // the bridge, or the browser rejects the stream). Otherwise it reconnects
+  // MSE: flapping between protocols makes go2rtc reopen the camera's RTSP
+  // session each time, and NVRs start refusing connections when that happens.
+  function stop(reason) {
+    if (done || !current()) return;
+    done = true;
+    entry.mseLastStop = reason; // for debugging via the remote inspector
+    const unsupported = /^(append|sourcebuffer)/.test(reason);
+    if (!live && !gotReply && !unsupported) {
+      // No answer yet: usually the camera is still starting (or the NVR refused
+      // a quick reconnect). A fresh request makes go2rtc retry; give up on MSE
+      // only after a few attempts.
+      entry.mseNoReply = (entry.mseNoReply || 0) + 1;
+      if (entry.mseNoReply >= 3) { entry.mseNoReply = 0; teardownPlayback(entry); onFail(); return; }
+    } else if (!live && unsupported) {
+      teardownPlayback(entry); onFail(); return;
+    }
+    markConnecting(entry, "Reconnecting…");
+    teardownPlayback(entry);
+    entry.restartTimer = setTimeout(() => {
+      entry.restartTimer = null;
+      if (cells.has(baseName) && entry.sourceName === sourceName) {
+        startPlayback(baseName, entry, entry.quality === "fullscreen");
+      }
+    }, live ? 2000 : 5000);
+  }
+  // A cold camera takes ~10s (go2rtc starts ffmpeg and connects to the NVR).
+  entry.mseTimeout = setTimeout(() => stop("no-reply"), 15000);
+
+  function pump() {
+    if (!sb || sb.updating || !queue.length || !current()) return;
+    let data;
+    if (queue.length === 1) data = queue[0];
+    else {
+      let len = 0; queue.forEach(b => len += b.byteLength);
+      data = new Uint8Array(len);
+      let off = 0; queue.forEach(b => { data.set(new Uint8Array(b), off); off += b.byteLength; });
+    }
+    queue = [];
+    try { sb.appendBuffer(data); } catch (e) { stop("append:" + e.name); }
+  }
+
+  function onUpdateEnd() {
+    if (!current()) return;
+    const b = sb.buffered;
+    if (b.length) {
+      const start = b.start(0), end = b.end(b.length - 1);
+      if (!kicked) {
+        // webOS (Chrome 68) won't start decoding MSE until it is told to
+        // seek and play, so once ~0.3s is buffered, jump near the live edge.
+        if (end - start >= 0.3) {
+          kicked = true;
+          video.currentTime = Math.max(start, end - 0.3);
+          video.play().catch(() => {});
+        }
+      } else if (!live && (video.currentTime > start + 0.2 || video.webkitDecodedFrameCount > 0)) {
+        // webOS never fires loadeddata/playing for MSE, so the first decoded
+        // frame after the kick (or a moving clock) counts as "live".
+        goLive();
+      } else if (video.currentTime < start || (!video.paused && end - video.currentTime > 6)) {
+        // Catch up only after a real hiccup. webOS pre-buffers ~3s before its
+        // clock starts and then plays at a steady ~3s behind; seeking at a
+        // smaller lag interrupts that pre-buffer and makes the picture stutter.
+        video.currentTime = Math.max(start, end - 0.5);
+      }
+      // Keep the buffer small so memory stays flat on the TV.
+      if (queue.length === 0 && end - start > 20) {
+        try { sb.remove(start, end - 8); return; } catch (e) {}
+      }
+    }
+    pump();
+  }
+
+  ms.addEventListener("sourceopen", () => {
+    if (!current()) return;
+    try { URL.revokeObjectURL(video.src); } catch (e) {}
+    try { ws = new WebSocket(wsUrl(sourceName)); } catch (e) { stop("ws"); return; }
+    ws.binaryType = "arraybuffer";
+    entry.ws = ws;
+    ws.onopen = () => ws.send(JSON.stringify({ type: "mse", value: codecs.join(",") }));
+    ws.onmessage = (ev) => {
+      if (!current()) return;
+      if (typeof ev.data === "string") {
+        let msg; try { msg = JSON.parse(ev.data); } catch (e) { return; }
+        if (msg.type === "mse") {
+          gotReply = true;
+          entry.mseNoReply = 0;
+          clearTimeout(entry.mseTimeout);
+          entry.mseTimeout = setTimeout(() => stop("no-frames"), 20000);
+          try {
+            sb = ms.addSourceBuffer(msg.value);
+            sb.mode = "segments";
+            sb.addEventListener("updateend", onUpdateEnd);
+          } catch (e) { stop("sourcebuffer"); }
+        } else if (msg.type === "error") {
+          stop("server:" + msg.value);
+        }
+        return;
+      }
+      queue.push(ev.data);
+      if (queue.length > 200) queue = queue.slice(-100); // never grow without bound
+      pump();
+    };
+    ws.onerror = () => stop("ws-error");
+    ws.onclose = () => stop("ws-closed");
+  }, { once: true });
+
+  function goLive() {
+    if (!current() || live) return;
+    live = true;
+    clearTimeout(entry.mseTimeout); entry.mseTimeout = null;
+    video.play().catch(() => {});
+    markLive(entry);
+
+    // Watchdog: if playback stops advancing (and the user didn't pause), restart it.
+    let lastT = -1, stuck = 0;
+    entry.mseWatch = setInterval(() => {
+      if (!current()) return;
+      if (video.paused) { stuck = 0; return; }
+      if (video.currentTime === lastT) {
+        stuck++;
+        if (stuck >= 3) stop("stalled"); // ~6s frozen
+      } else { stuck = 0; lastT = video.currentTime; }
+    }, 2000);
+  }
+  video.addEventListener("loadeddata", goLive, { once: true });
+  video.addEventListener("playing", goLive, { once: true });
+}
+
+function startWebRTC(baseName, entry, sourceName, onFail) {
+  // Old Chromium (webOS 5 = Chrome 68) has no addTransceiver and never delivers
+  // go2rtc's tracks, so go straight to HLS there.
+  if (!window.RTCPeerConnection || !window.WebSocket ||
+      typeof RTCPeerConnection.prototype.addTransceiver !== "function") { onFail(); return; }
+
+  let settled = false;
+  let pc;
+  try {
+    pc = new RTCPeerConnection({
+    iceServers: [
+      { urls: "stun:stun.cloudflare.com:3478" },
+      { urls: "stun:stun.l.google.com:19302" },
+    ],
+  });
+    entry.pc = pc;
+    pc.addTransceiver("video", { direction: "recvonly" });
+    pc.addTransceiver("audio", { direction: "recvonly" });
+  } catch (e) {
+    // WebRTC setup not supported on this browser: fall back to HLS.
+    if (pc) { try { pc.close(); } catch (e2) {} }
+    entry.pc = null;
+    onFail();
+    return;
+  }
+  pc.ontrack = (ev) => {
+    if (entry.video.srcObject !== ev.streams[0]) {
+      entry.video.srcObject = ev.streams[0];
+      entry.video.play().catch(() => {});
+      // Only call it live once frames actually arrive; otherwise the timeout
+      // below falls back to HLS.
+      entry.video.addEventListener("loadeddata", () => {
+        if (settled || entry.pc !== pc) return;
+        settled = true;
+        clearTimeout(entry.rtcTimeout);
+        markLive(entry);
+      }, { once: true });
+    }
+  };
+
+  let ws;
+  try { ws = new WebSocket(wsUrl(sourceName)); }
+  catch (e) { onFail(); return; }
+  entry.ws = ws;
+
+  function fail(reason) {
+    if (settled) return;
+    settled = true;
+    clearTimeout(entry.rtcTimeout);
+    try { pc.close(); } catch (e) {}
+    try { ws.close(); } catch (e) {}
+    if (entry.pc === pc) entry.pc = null;
+    if (entry.ws === ws) entry.ws = null;
+    onFail();
+  }
+
+  entry.rtcTimeout = setTimeout(() => fail("timeout"), 6000);
+
+  pc.oniceconnectionstatechange = () => {
+    if (settled) return;
+    const s = pc.iceConnectionState;
+    if (s === "failed" || s === "disconnected" || s === "closed") {
+      fail("ice:" + s);
+    }
+  };
+  pc.onicecandidate = (ev) => {
+    if (ev.candidate && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: "webrtc/candidate", value: ev.candidate.candidate }));
+    }
+  };
+
+  ws.addEventListener("open", async () => {
+    try {
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      ws.send(JSON.stringify({ type: "webrtc/offer", value: pc.localDescription.sdp }));
+    } catch (e) { fail("offer-error:" + e.message); }
+  });
+  ws.addEventListener("message", async (ev) => {
+    let msg;
+    try { msg = JSON.parse(ev.data); } catch (e) { return; }
+    if (msg.type === "webrtc/answer") {
+      try { await pc.setRemoteDescription({ type: "answer", sdp: msg.value }); }
+      catch (e) { fail("answer-error:" + e.message); }
+    } else if (msg.type === "webrtc/candidate") {
+      try { await pc.addIceCandidate({ candidate: msg.value, sdpMid: "0" }); } catch (e) {}
+    }
+  });
+  ws.addEventListener("error", (ev) => fail("ws-error"));
+  ws.addEventListener("close", (ev) => {
+    if (!settled) { fail("ws-closed:" + ev.code); return; }
+    // Was live, connection dropped: try again from scratch (WebRTC, then HLS fallback).
+    if (cells.has(baseName) && entry.ws === null && entry.pc === null) return; // already torn down elsewhere
+    if (cells.has(baseName)) {
+      markConnecting(entry, "Reconnecting…");
+      setTimeout(() => {
+        if (cells.has(baseName)) startPlayback(baseName, entry, entry.quality === "fullscreen");
+      }, 2000);
+    }
+  });
+}
+
+function startHls(baseName, entry, sourceName) {
+  const url = hlsUrl(sourceName);
+
+  if (window.Hls && Hls.isSupported()) {
+    const hls = new Hls({
+      liveSyncDurationCount: 1,
+      manifestLoadingMaxRetry: Infinity,
+      levelLoadingMaxRetry: Infinity,
+      fragLoadingMaxRetry: Infinity,
+      manifestLoadingRetryDelay: 2000,
+      levelLoadingRetryDelay: 2000,
+      fragLoadingRetryDelay: 1000,
+    });
+    entry.hls = hls;
+    hls.loadSource(url);
+    hls.attachMedia(entry.video);
+    hls.on(Hls.Events.MANIFEST_PARSED, () => {
+      entry.video.play().catch(() => {});
+      markLive(entry);
+    });
+    hls.on(Hls.Events.ERROR, (evt, data) => {
+      if (data.fatal) {
+        markConnecting(entry, "Reconnecting…");
+        setTimeout(() => {
+          if (!cells.has(baseName) || entry.sourceName !== sourceName || entry.hls !== hls) return;
+          hls.loadSource(url);
+          hls.startLoad();
+        }, 3000);
+      }
+    });
+  } else if (entry.video.canPlayType("application/vnd.apple.mpegurl")) {
+    entry.video.src = url;
+    entry.video.addEventListener("loadedmetadata", () => {
+      entry.video.play().catch(() => {});
+      markLive(entry);
+    });
+    entry.video.addEventListener("error", () => markConnecting(entry, "Reconnecting…"));
+  } else {
+    markError(entry, "Playback not supported");
+  }
+}
+
+// ============================================================
+// Remote control navigation
+// ============================================================
+function setFocus(index) {
+  const names = cameraNames;
+  if (names.length === 0) return;
+  focusedIndex = ((index % names.length) + names.length) % names.length;
+  names.forEach((name, i) => {
+    const entry = cells.get(name);
+    if (entry) entry.cell.classList.toggle("focused", i === focusedIndex);
+  });
+  scheduleLive();
+}
+
+// ============================================================
+// Live tile + snapshots
+// ============================================================
+// webOS TVs (e.g. LG 50UN7240) decode only one video at a time, so only the
+// focused tile plays live; every other tile shows a refreshed snapshot.
+let liveName = null;  // camera currently allowed to play
+let liveTimer = null;
+const LIVE_SWITCH_DELAY_MS = 400;     // don't churn streams while arrowing across tiles
+const SNAPSHOT_MIN_INTERVAL_MS = 1000;
+const SNAPSHOT_TIMEOUT_MS = 10000;
+
+function enterSnapshotMode(entry) {
+  teardownPlayback(entry);
+  entry.cell.classList.remove("videoOn");
+  if (entry.hasSnap) {
+    entry.dot.className = "dot snap";
+    entry.status.style.display = "none";
+  } else {
+    markConnecting(entry, "Loading…");
+  }
+}
+
+function setLive(name, wantFs) {
+  clearTimeout(liveTimer);
+  if (liveName && liveName !== name) {
+    const old = cells.get(liveName);
+    if (old) enterSnapshotMode(old); // frees the decoder before the new tile starts
+  }
+  liveName = name;
+  const entry = name ? cells.get(name) : null;
+  if (entry) startPlayback(name, entry, wantFs);
+}
+
+function scheduleLive() {
+  if (isFullscreen) return;
+  clearTimeout(liveTimer);
+  const name = cameraNames[focusedIndex];
+  if (!name || name === liveName) return;
+  liveTimer = setTimeout(() => {
+    const n = cameraNames[focusedIndex];
+    if (n && n !== liveName && !isFullscreen) setLive(n, false);
+  }, liveName ? LIVE_SWITCH_DELAY_MS : 0);
+}
+
+function snapshotUrl(name) {
+  return apiBase() + "/api/frame.jpeg?src=" + encodeURIComponent(name) + "&t=" + Date.now();
+}
+
+// Loads a fresh snapshot off-screen, then swaps it in (no flicker). go2rtc
+// waits for a keyframe to build each JPEG, so a request can take a few seconds.
+function requestSnapshot(name) {
+  const entry = cells.get(name);
+  if (!entry || entry.snapPending) return;
+  entry.snapPending = true;
+  entry.snapAt = Date.now();
+  const img = new Image();
+  let timer = null;
+  const done = (ok) => {
+    clearTimeout(timer);
+    if (!entry.snapPending) return;
+    entry.snapPending = false;
+    entry.snapAt = Date.now();
+    if (cells.get(name) !== entry) return;
+    if (ok) {
+      img.className = "snap";
+      img.alt = "";
+      if (entry.snap.parentNode) entry.snap.parentNode.replaceChild(img, entry.snap);
+      entry.snap = img;
+      entry.hasSnap = true;
+      entry.snapFails = 0;
+      if (name !== liveName) {
+        entry.dot.className = "dot snap";
+        entry.status.style.display = "none";
+      }
+    } else {
+      entry.snapFails++;
+      if (name !== liveName && entry.snapFails >= 3) markError(entry, "No picture");
+    }
+  };
+  timer = setTimeout(() => { img.onload = img.onerror = null; done(false); }, SNAPSHOT_TIMEOUT_MS);
+  img.onload = () => done(true);
+  img.onerror = () => done(false);
+  img.src = snapshotUrl(name);
+}
+
+// Self-healing: reconnects are scheduled from several places (MSE retries,
+// WebRTC drops, fullscreen quality switches); if an edge case ever leaves the
+// live tile with no stream and no restart pending, start it again.
+setInterval(() => {
+  if (!liveName) return;
+  const e = cells.get(liveName);
+  if (!e || e.ms || e.hls || e.pc || e.ws || e.restartTimer) return;
+  const wantFs = isFullscreen && cameraNames[focusedIndex] === liveName;
+  startPlayback(liveName, e, wantFs);
+}, 3000);
+
+// Refresh snapshots for every visible tile that isn't showing live video.
+setInterval(() => {
+  const activeName = cameraNames[focusedIndex];
+  cameraNames.forEach(name => {
+    const e = cells.get(name);
+    if (!e || e.snapPending) return;
+    if (isFullscreen && name !== activeName) return;       // hidden behind fullscreen
+    if (e.cell.classList.contains("videoOn")) return;      // live video is showing
+    if (Date.now() - e.snapAt < SNAPSHOT_MIN_INTERVAL_MS) return;
+    requestSnapshot(name);
+  });
+}, 250);
+
+const FS_CONTROLS = ["mute", "pause", "close"];
+let fsControl = "mute"; // one of FS_CONTROLS: which fullscreen control is arrow-selected
+
+function updateFsControlFocus() {
+  const entry = activeEntry();
+  if (!entry) return;
+  entry.muteBtn.classList.toggle("kbdFocus", fsControl === "mute");
+  entry.pauseBtn.classList.toggle("kbdFocus", fsControl === "pause");
+  entry.closeBtn.classList.toggle("kbdFocus", fsControl === "close");
+}
+
+function toggleFullscreen(enter) {
+  isFullscreen = enter;
+  grid.classList.toggle("fullscreen", enter);
+  document.getElementById("topbar").style.display = enter ? "none" : "flex";
+  sizeGrid();
+  cameraNames.forEach((name, i) => {
+    const entry = cells.get(name);
+    if (entry) entry.cell.classList.toggle("active", enter && i === focusedIndex);
+  });
+  const activeName = cameraNames[focusedIndex];
+  const entry = activeName ? cells.get(activeName) : null;
+  if (entry) {
+    if (activeName !== liveName) {
+      // OK was pressed before the delayed live switch kicked in.
+      setLive(activeName, enter);
+    } else if (fsAvailable.has(activeName)) {
+      // Switch between the lighter grid-quality stream and the full-quality
+      // "_fs" stream, so fullscreen looks its best without the grid paying
+      // the bandwidth/decode cost of full quality all the time.
+      startPlayback(activeName, entry, enter);
+    }
+  }
+  if (enter) {
+    fsControl = "mute";
+    updateFsControlFocus();
+  }
+}
+
+const gearBtn = document.getElementById("settingsBtn");
+let focusZone = "grid"; // "grid" | "gear"
+
+function enterGearFocus() {
+  focusZone = "gear";
+  gearBtn.classList.add("focused");
+  cameraNames.forEach(name => {
+    const entry = cells.get(name);
+    if (entry) entry.cell.classList.remove("focused");
+  });
+}
+function leaveGearFocus() {
+  focusZone = "grid";
+  gearBtn.classList.remove("focused");
+  setFocus(focusedIndex);
+}
+
+// Keys for play/pause and mute, by numeric code, covering common remotes
+// and browsers: Space=32, M=77, dedicated media keys (if sent through).
+const KEY_MUTE = [77, 173, 181];
+const KEY_PLAYPAUSE = [32, 179, 415, 19];
+
+function activeEntry() {
+  const name = cameraNames[focusedIndex];
+  return name ? cells.get(name) : null;
+}
+function toggleMuteFocused() {
+  const entry = activeEntry();
+  if (!entry) return;
+  entry.muteBtn.click();
+}
+function togglePauseFocused() {
+  const entry = activeEntry();
+  if (!entry) return;
+  entry.pauseBtn.click();
+}
+
+document.addEventListener("keydown", (e) => {
+  if (settingsOpen) return handleSettingsKey(e);
+
+  // ---- Fullscreen: arrows pick mute/pause/close, OK activates, Back exits ----
+  if (isFullscreen) {
+    const ci = FS_CONTROLS.indexOf(fsControl);
+    switch (e.keyCode) {
+      case 37: fsControl = FS_CONTROLS[Math.max(0, ci - 1)]; updateFsControlFocus(); e.preventDefault(); break;
+      case 39: fsControl = FS_CONTROLS[Math.min(FS_CONTROLS.length - 1, ci + 1)]; updateFsControlFocus(); e.preventDefault(); break;
+      case 13:
+        if (fsControl === "mute") toggleMuteFocused();
+        else if (fsControl === "pause") togglePauseFocused();
+        else toggleFullscreen(false);
+        e.preventDefault();
+        break;
+      default:
+        if (KEY_MUTE.includes(e.keyCode)) { toggleMuteFocused(); e.preventDefault(); break; }
+        if (KEY_PLAYPAUSE.includes(e.keyCode)) { togglePauseFocused(); e.preventDefault(); break; }
+        if (e.keyCode === 461 || e.keyCode === 10009 || e.keyCode === 27) {
+          toggleFullscreen(false);
+          e.preventDefault();
+        }
+        break;
+    }
+    return;
+  }
+
+  if (focusZone === "gear") {
+    switch (e.keyCode) {
+      case 40: leaveGearFocus(); e.preventDefault(); break;
+      case 13: openSettings(); e.preventDefault(); break;
+      case 461: case 10009: case 27: leaveGearFocus(); e.preventDefault(); break;
+    }
+    return;
+  }
+
+  const cols = colsFor(cameraNames.length);
+  switch (e.keyCode) {
+    case 37: setFocus(focusedIndex - 1); e.preventDefault(); break;
+    case 39: setFocus(focusedIndex + 1); e.preventDefault(); break;
+    case 38:
+      if (focusedIndex - cols < 0) enterGearFocus();
+      else setFocus(focusedIndex - cols);
+      e.preventDefault();
+      break;
+    case 40: setFocus(focusedIndex + cols); e.preventDefault(); break;
+    case 13:
+      if (cameraNames.length > 0) toggleFullscreen(true);
+      e.preventDefault();
+      break;
+    case 461: case 10009: case 27:
+      openSettings();
+      e.preventDefault();
+      break;
+  }
+});
+
+// ============================================================
+// Settings overlay
+// ============================================================
+const settingsEl = document.getElementById("settings");
+const hostInput = document.getElementById("hostInput");
+const btnSave = document.getElementById("btnSave");
+const btnCancel = document.getElementById("btnCancel");
+const cameraListEl = document.getElementById("cameraList");
+const ICON_CHECK = '<svg viewBox="0 0 24 24"><path d="M9 16.2 4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4z"/></svg>';
+
+let settingsOpen = false;
+let stagedEnabled = null; // Set, staged while dialog is open
+let settingsFocusIndex = 0; // 0 = host, 1..N = camera rows, N+1 = button row
+let buttonSel = 1; // within the button row: 0 = cancel, 1 = save
+
+function lastSettingsIndex() { return allCameraNames.length + 1; }
+
+function openSettings() {
+  settingsOpen = true;
+  hostInput.value = BRIDGE_HOST;
+  stagedEnabled = new Set(enabledCameras === null ? allCameraNames : enabledCameras);
+  renderCameraList();
+  settingsEl.classList.add("show");
+  settingsFocusIndex = 0;
+  buttonSel = 1;
+  updateSettingsFocus();
+}
+function closeSettings() {
+  settingsOpen = false;
+  settingsEl.classList.remove("show");
+  focusZone = "grid";
+  gearBtn.classList.remove("focused");
+  setFocus(focusedIndex);
+}
+let cameraRowEls = []; // parallel to allCameraNames
+
+function renderCameraList() {
+  cameraListEl.innerHTML = "";
+  cameraRowEls = allCameraNames.map((name) => {
+    const row = document.createElement("div");
+    row.className = "camRow";
+    const box = document.createElement("div");
+    box.className = "box";
+    box.innerHTML = ICON_CHECK;
+    const label = document.createElement("div");
+    label.className = "label";
+    label.textContent = prettyName(name);
+    row.appendChild(box);
+    row.appendChild(label);
+    row.classList.toggle("checked", stagedEnabled.has(name));
+    row.addEventListener("click", () => toggleStaged(name));
+    cameraListEl.appendChild(row);
+    return row;
+  });
+}
+function toggleStaged(name) {
+  if (stagedEnabled.has(name)) stagedEnabled.delete(name);
+  else stagedEnabled.add(name);
+  const idx = allCameraNames.indexOf(name);
+  if (idx >= 0 && cameraRowEls[idx]) cameraRowEls[idx].classList.toggle("checked", stagedEnabled.has(name));
+}
+function updateSettingsFocus() {
+  const lastIdx = lastSettingsIndex();
+  btnCancel.classList.toggle("focused", settingsFocusIndex === lastIdx && buttonSel === 0);
+  btnSave.classList.toggle("focused", settingsFocusIndex === lastIdx && buttonSel === 1);
+  const rows = cameraListEl.querySelectorAll(".camRow");
+  rows.forEach((row, i) => {
+    const rowIdx = i + 1;
+    row.classList.toggle("focused", settingsFocusIndex === rowIdx);
+    if (settingsFocusIndex === rowIdx) row.scrollIntoView({ block: "nearest" });
+  });
+  if (settingsFocusIndex === 0) hostInput.focus();
+  else hostInput.blur();
+}
+function handleSettingsKey(e) {
+  const lastIdx = lastSettingsIndex();
+  switch (e.keyCode) {
+    case 40: // down
+      if (settingsFocusIndex < lastIdx) { settingsFocusIndex++; updateSettingsFocus(); e.preventDefault(); }
+      break;
+    case 38: // up
+      if (settingsFocusIndex > 0) { settingsFocusIndex--; updateSettingsFocus(); e.preventDefault(); }
+      break;
+    case 37: case 39:
+      if (settingsFocusIndex === lastIdx) {
+        buttonSel = buttonSel === 0 ? 1 : 0;
+        updateSettingsFocus();
+        e.preventDefault();
+      }
+      break;
+    case 13:
+      if (settingsFocusIndex === 0) {
+        // text field: nothing extra to do, webOS shows its own keyboard
+      } else if (settingsFocusIndex === lastIdx) {
+        if (buttonSel === 0) closeSettings(); else saveSettings();
+      } else {
+        const name = allCameraNames[settingsFocusIndex - 1];
+        toggleStaged(name);
+      }
+      e.preventDefault();
+      break;
+    case 461: case 10009: case 27:
+      closeSettings(); e.preventDefault();
+      break;
+  }
+}
+function saveSettings() {
+  const val = hostInput.value.trim();
+  if (val) {
+    setHost(val);
+    BRIDGE_HOST = val;
+  }
+  enabledCameras = new Set(stagedEnabled);
+  saveEnabledCameras(enabledCameras);
+  closeSettings();
+  teardownAll();
+  cameraNames = [];
+  refreshCameras(true);
+}
+btnCancel.addEventListener("click", closeSettings);
+btnSave.addEventListener("click", saveSettings);
+document.getElementById("settingsBtn").addEventListener("click", openSettings);
+
+// ============================================================
+// Shortcut footer: fades out after a few seconds of inactivity
+// ============================================================
+const footerEl = document.getElementById("footer");
+let footerIdleTimer = null;
+function wakeFooter() {
+  footerEl.classList.remove("idle");
+  clearTimeout(footerIdleTimer);
+  footerIdleTimer = setTimeout(() => footerEl.classList.add("idle"), 4000);
+}
+document.addEventListener("keydown", wakeFooter);
+wakeFooter();
+
+// ============================================================
+// Boot
+// ============================================================
+refreshCameras(true);
+refreshTimer = setInterval(() => refreshCameras(false), REFRESH_INTERVAL_MS);
+</script>
+</body>
+</html>

@@ -1,0 +1,38 @@
+# Copy this file to go2rtc.yaml (which is git-ignored) and fill in your NVR details.
+# Never commit the real go2rtc.yaml: it contains your camera credentials.
+
+api:
+  listen: ":1984"
+  origin: "*"          # lets the TV app (a file:// origin) call the API
+
+rtsp:
+  listen: ":8554"
+
+webrtc:
+  listen: ":8555/tcp"
+
+ffmpeg:
+  bin: "C:/path/to/ffmpeg.exe"   # or just "ffmpeg" if it is on PATH
+
+# Keep the grid streams connected at all times so a viewer starts in ~1s.
+# Leave the _fs (fullscreen) streams on demand: many NVRs limit simultaneous RTSP sessions.
+preload:
+  Front_Door: audio=&video=
+  Garden: audio=&video=
+
+# Each camera has two variants:
+#  - <Name>     : NVR substream, shown in the grid (light, fast to start)
+#  - <Name>_fs  : NVR main stream, used only in fullscreen
+# Names become the labels on the TV ("_" and "-" become spaces).
+# ffmpeg transcodes HEVC -> H.264 and G.711 -> AAC with a 1s keyframe interval (-g 20 @ 20fps).
+# Adjust the RTSP path to your NVR's format (Hikvision, Dahua, XMeye, ... all differ).
+streams:
+  Front_Door:
+    - "exec:ffmpeg -rtsp_transport tcp -i rtsp://USER:PASSWORD@NVR_IP:554/H264?ch=1&subtype=1 -c:v libx264 -g 20 -profile:v high -level:v 4.1 -preset:v veryfast -tune:v zerolatency -pix_fmt:v yuv420p -c:a aac -rtsp_transport tcp -f rtsp {output}"
+  Front_Door_fs:
+    - "exec:ffmpeg -rtsp_transport tcp -i rtsp://USER:PASSWORD@NVR_IP:554/H264?ch=1&subtype=0 -c:v libx264 -g 20 -profile:v high -level:v 4.1 -preset:v veryfast -tune:v zerolatency -pix_fmt:v yuv420p -c:a aac -rtsp_transport tcp -f rtsp {output}"
+
+  Garden:
+    - "exec:ffmpeg -rtsp_transport tcp -i rtsp://USER:PASSWORD@NVR_IP:554/H264?ch=2&subtype=1 -c:v libx264 -g 20 -profile:v high -level:v 4.1 -preset:v veryfast -tune:v zerolatency -pix_fmt:v yuv420p -c:a aac -rtsp_transport tcp -f rtsp {output}"
+  Garden_fs:
+    - "exec:ffmpeg -rtsp_transport tcp -i rtsp://USER:PASSWORD@NVR_IP:554/H264?ch=2&subtype=0 -c:v libx264 -g 20 -profile:v high -level:v 4.1 -preset:v veryfast -tune:v zerolatency -pix_fmt:v yuv420p -c:a aac -rtsp_transport tcp -f rtsp {output}"

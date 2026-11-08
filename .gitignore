@@ -1,0 +1,15 @@
+# Secrets - never commit
+go2rtc/go2rtc.yaml
+webos_rsa
+webos_rsa.*
+*.pem
+*.key
+
+# Binaries / build output
+go2rtc/go2rtc.exe
+go2rtc/go2rtc
+out/
+*.ipk
+
+# Local tooling
+.claude/

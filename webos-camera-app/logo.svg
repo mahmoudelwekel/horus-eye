@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1c2a40"/>
+      <stop offset="1" stop-color="#0a0f18"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.45" r="0.55">
+      <stop offset="0" stop-color="#4da3ff" stop-opacity="0.28"/>
+      <stop offset="1" stop-color="#4da3ff" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffe08a"/>
+      <stop offset="0.55" stop-color="#f2b843"/>
+      <stop offset="1" stop-color="#c98a1c"/>
+    </linearGradient>
+  </defs>
+
+  <!-- tile -->
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <rect width="512" height="512" rx="112" fill="url(#glow)"/>
+
+  <g fill="none" stroke="url(#gold)" stroke-linecap="round" stroke-linejoin="round">
+    <!-- brow -->
+    <path d="M88 172 Q250 82 424 150" stroke-width="30"/>
+    <!-- eye: upper lid running out into the long kohl line -->
+    <path d="M84 262 Q232 150 352 232 L440 236" stroke-width="22"/>
+    <!-- lower lid -->
+    <path d="M84 262 Q226 330 352 232" stroke-width="18"/>
+    <!-- vertical marking below the eye -->
+    <path d="M194 289 L178 430" stroke-width="22"/>
+    <!-- curling tail -->
+    <path d="M275 276 C306 350 360 388 404 384 C446 380 452 330 418 318 C392 309 376 336 396 350" stroke-width="20"/>
+  </g>
+  <!-- iris -->
+  <circle cx="226" cy="244" r="44" fill="url(#gold)"/>
+  <circle cx="240" cy="230" r="11" fill="#fff6d8" opacity="0.85"/>
+</svg>

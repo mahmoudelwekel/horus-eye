@@ -1,0 +1,11 @@
+{
+  "id": "com.home.cameradashboard",
+  "version": "1.0.0",
+  "vendor": "Home",
+  "type": "web",
+  "main": "index.html",
+  "title": "Horus Eye",
+  "icon": "icon.png",
+  "largeIcon": "largeIcon.png",
+  "requiredACG": []
+}
