@@ -40,18 +40,67 @@ jobs:
           ares-package webos-camera-app -o out
           ls -l out
 
+      # Homebrew Channel (webosbrew) repository files. Add this URL in Homebrew Channel:
+      #   https://github.com/<owner>/<repo>/releases/latest/download/apps.json
+      - name: Generate Homebrew Channel manifest and index
+        env:
+          REPO: ${{ github.repository }}
+          TAG: ${{ steps.meta.outputs.tag }}
+          IPK: ${{ steps.meta.outputs.ipk }}
+        run: |
+          node - <<'JS'
+          const fs = require('fs');
+          const crypto = require('crypto');
+          const { REPO, TAG, IPK } = process.env;
+          const app = JSON.parse(fs.readFileSync('webos-camera-app/appinfo.json', 'utf8'));
+          const ipk = fs.readFileSync(`out/${IPK}`);
+          const base = `https://github.com/${REPO}`;
+          const iconUri = `https://raw.githubusercontent.com/${REPO}/master/webos-camera-app/largeIcon.png`;
+          const description = 'Watch home CCTV/NVR cameras on your TV through a local go2rtc bridge.';
+          const manifest = {
+            id: app.id,
+            version: app.version,
+            type: app.type,
+            title: app.title,
+            appDescription: description,
+            iconUri,
+            sourceUrl: base,
+            rootRequired: false,
+            ipkUrl: `${base}/releases/download/${TAG}/${IPK}`,
+            ipkHash: { sha256: crypto.createHash('sha256').update(ipk).digest('hex') },
+            ipkSize: ipk.length,
+          };
+          const index = {
+            paging: { page: 1, count: 1, maxPage: 1, itemsTotal: 1, prevUrl: null, nextUrl: null },
+            packages: [{
+              id: app.id,
+              title: app.title,
+              iconUri,
+              manifestUrl: `${base}/releases/download/${TAG}/manifest.json`,
+              manifest,
+              pool: 'main',
+              category: 'multimedia',
+              shortDescription: description,
+            }],
+          };
+          fs.writeFileSync('out/manifest.json', JSON.stringify(manifest, null, 2));
+          fs.writeFileSync('out/apps.json', JSON.stringify(index, null, 2));
+          JS
+          cat out/manifest.json
+
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.meta.outputs.tag }}
           IPK: out/${{ steps.meta.outputs.ipk }}
         run: |
+          ASSETS=("$IPK" out/manifest.json out/apps.json)
           if gh release view "$TAG" >/dev/null 2>&1; then
-            # Same version already released: refresh the asset so the release matches master.
-            gh release upload "$TAG" "$IPK" --clobber
-            echo "Updated asset on existing release $TAG (bump version in appinfo.json for a new release)."
+            # Same version already released: refresh the assets so the release matches master.
+            gh release upload "$TAG" "${ASSETS[@]}" --clobber
+            echo "Updated assets on existing release $TAG (bump version in appinfo.json for a new release)."
           else
-            gh release create "$TAG" "$IPK" \
+            gh release create "$TAG" "${ASSETS[@]}" \
               --title "Horus Eye $TAG" \
               --target "$GITHUB_SHA" \
               --generate-notes
